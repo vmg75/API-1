@@ -8,6 +8,12 @@ import re
 from colorama import init, Fore, Back, Style
 from api_client import make_get_request, parse_query_params
 from json_formatter import format_json_for_display
+from country_info import display_country_with_weather
+from currency import (
+    convert_currency, get_favorite_currencies, get_available_currencies,
+    format_currency_conversion, is_currency_available, get_currency_rate_from_file,
+    update_currency_rates, get_currency_info
+)
 
 # Initialize colorama for cross-platform colored output
 init(autoreset=True)
@@ -57,194 +63,14 @@ def display_country_info():
     print_prompt("Введите название страны: ")
     country_name = input().strip()
     
-    if not country_name:
-        print_error("Название страны не может быть пустым!")
-        return
+    success, output = display_country_with_weather(country_name)
     
-    url = f"https://restcountries.com/v3.1/name/{country_name}"
-    status_code, data, error = make_get_request(url)
-    
-    if error:
-        print_error(error)
-        return
-    
-    if not data or not isinstance(data, list) or len(data) == 0:
-        print_error("Страна не найдена!")
-        return
-    
-    country = data[0]  # Take first result
-    
-    print_success(f"Информация о стране: {country.get('name', {}).get('common', 'Неизвестно')}")
-    print_separator()
-    
-    # Basic information
-    print_label("Название (официальное): ")
-    print_value(country.get('name', {}).get('official', 'Неизвестно'))
-    
-    print_label("Столица: ")
-    capitals = country.get('capital', [])
-    print_value(', '.join(capitals) if capitals else 'Неизвестно')
-    
-    print_label("Население: ")
-    population = country.get('population', 0)
-    print_value(f"{population:,}" if population else 'Неизвестно')
-    
-    print_label("Регион: ")
-    print_value(country.get('region', 'Неизвестно'))
-    
-    print_label("Субрегион: ")
-    print_value(country.get('subregion', 'Неизвестно'))
-    
-    # Languages
-    print_label("Языки: ")
-    languages = country.get('languages', {})
-    if languages:
-        lang_names = list(languages.values())
-        print_value(', '.join(lang_names))
+    if success:
+        print_separator()
+        print(output)
+        print_separator()
     else:
-        print_value('Неизвестно')
-    
-    # Currency
-    print_label("Валюта: ")
-    currencies = country.get('currencies', {})
-    if currencies:
-        currency_info = []
-        for code, info in currencies.items():
-            name = info.get('name', code)
-            symbol = info.get('symbol', '')
-            currency_info.append(f"{name} ({symbol})")
-        print_value(', '.join(currency_info))
-    else:
-        print_value('Неизвестно')
-    
-    # Flag
-    print_label("Флаг (PNG): ")
-    flags = country.get('flags', {})
-    flag_png = flags.get('png', '')
-    if flag_png:
-        print_value(flag_png)
-    else:
-        print_value('Неизвестно')
-    
-    # Borders
-    print_label("Границы с соседями: ")
-    borders = country.get('borders', [])
-    if borders:
-        print_value(', '.join(borders))
-    else:
-        print_value('Нет данных')
-    
-    # Timezones
-    print_label("Часовые пояса: ")
-    timezones = country.get('timezones', [])
-    if timezones:
-        print_value(', '.join(timezones))
-    else:
-        print_value('Неизвестно')
-    
-    # Weather information
-    capitals = country.get('capital', [])
-    capital_coords = country.get('capitalInfo', {}).get('latlng', [])
-    
-    if capitals and capital_coords and len(capital_coords) == 2:
-        display_weather(capitals[0], capital_coords[0], capital_coords[1])
-    
-    print_separator()
-
-
-def display_weather(capital_name: str, latitude: float, longitude: float):
-    """Display current weather for the capital city."""
-    print_label("Текущая погода в столице: ")
-    print_value(f"{capital_name}")
-    print()
-    
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        'latitude': latitude,
-        'longitude': longitude,
-        'current': 'temperature_2m,wind_speed_10m,relative_humidity_2m,weather_code'
-    }
-    
-    status_code, data, error = make_get_request(url, params)
-    
-    if error:
-        print_error(f"Ошибка получения данных о погоде: {error}")
-        return
-    
-    if not data or 'current' not in data:
-        print_error("Не удалось получить данные о погоде!")
-        return
-    
-    current = data['current']
-    units = data.get('current_units', {})
-    
-    # Temperature
-    temp = current.get('temperature_2m')
-    temp_unit = units.get('temperature_2m', '°C')
-    if temp is not None:
-        print_label("Температура: ")
-        print_value(f"{temp}{temp_unit}")
-    
-    # Wind speed
-    wind_speed = current.get('wind_speed_10m')
-    wind_unit = units.get('wind_speed_10m', 'km/h')
-    if wind_speed is not None:
-        print_label("Скорость ветра: ")
-        print_value(f"{wind_speed} {wind_unit}")
-    
-    # Humidity
-    humidity = current.get('relative_humidity_2m')
-    if humidity is not None:
-        print_label("Влажность: ")
-        print_value(f"{humidity}%")
-    
-    # Weather code description
-    weather_code = current.get('weather_code')
-    if weather_code is not None:
-        weather_desc = get_weather_description(weather_code)
-        print_label("Погода: ")
-        print_value(weather_desc)
-    
-    # Time
-    time_str = current.get('time', '')
-    if time_str:
-        print_label("Время обновления: ")
-        print_value(time_str)
-
-
-def get_weather_description(code: int) -> str:
-    """Convert weather code to human-readable description."""
-    weather_codes = {
-        0: "Ясно",
-        1: "Преимущественно ясно",
-        2: "Переменная облачность",
-        3: "Пасмурно",
-        45: "Туман",
-        48: "Изморозь",
-        51: "Легкая морось",
-        53: "Умеренная морось",
-        55: "Сильная морось",
-        56: "Легкая ледяная морось",
-        57: "Сильная ледяная морось",
-        61: "Легкий дождь",
-        63: "Умеренный дождь",
-        65: "Сильный дождь",
-        66: "Легкий ледяной дождь",
-        67: "Сильный ледяной дождь",
-        71: "Легкий снег",
-        73: "Умеренный снег",
-        75: "Сильный снег",
-        77: "Снежные зерна",
-        80: "Легкие ливни",
-        81: "Умеренные ливни",
-        82: "Сильные ливни",
-        85: "Легкие снежные ливни",
-        86: "Сильные снежные ливни",
-        95: "Гроза",
-        96: "Гроза с градом",
-        99: "Сильная гроза с градом"
-    }
-    return weather_codes.get(code, f"Неизвестно (код: {code})")
+        print_error(output)
 
 
 def display_custom_request():
@@ -319,6 +145,166 @@ def display_custom_request():
     print_separator()
 
 
+def display_currency_conversion():
+    """Display currency conversion interface."""
+    print_header("КОНВЕРТАЦИЯ ВАЛЮТ")
+    
+    # Get available currencies
+    favorite_currencies = get_favorite_currencies()
+    all_currencies = get_available_currencies()
+    
+    print_success("Доступные валюты:")
+    print_separator()
+    
+    # Display favorite currencies
+    print_label("Избранные валюты: ")
+    print_value(", ".join(favorite_currencies))
+    print()
+    
+    # Display all available currencies (first 20)
+    print_label("Все доступные валюты (первые 20): ")
+    print_value(", ".join(all_currencies[:20]))
+    if len(all_currencies) > 20:
+        print(f"{Fore.YELLOW}... и еще {len(all_currencies) - 20} валют{Style.RESET_ALL}")
+    print()
+    
+    # Get source currency
+    print_prompt("Введите исходную валюту (например, USD): ")
+    from_currency = input().strip().upper()
+    
+    if not from_currency:
+        print_error("Исходная валюта не может быть пустой!")
+        return
+    
+    if not is_currency_available(from_currency):
+        print_error(f"Валюта {from_currency} не найдена в базе данных!")
+        return
+    
+    # Get target currency
+    print_prompt("Введите целевую валюту (например, EUR): ")
+    to_currency = input().strip().upper()
+    
+    if not to_currency:
+        print_error("Целевая валюта не может быть пустой!")
+        return
+    
+    if not is_currency_available(to_currency):
+        print_error(f"Валюта {to_currency} не найдена в базе данных!")
+        return
+    
+    if from_currency == to_currency:
+        print_error("Исходная и целевая валюты не могут быть одинаковыми!")
+        return
+    
+    # Get amount
+    print_prompt("Введите сумму для конвертации: ")
+    try:
+        amount = float(input().strip())
+        if amount <= 0:
+            print_error("Сумма должна быть положительным числом!")
+            return
+    except ValueError:
+        print_error("Неверный формат суммы!")
+        return
+    
+    # Perform conversion
+    result = convert_currency(amount, from_currency, to_currency)
+    
+    if result is None:
+        print_error(f"Не удалось выполнить конвертацию {from_currency} -> {to_currency}")
+        return
+    
+    # Get exchange rate
+    rate = get_currency_rate_from_file(from_currency, to_currency)
+    
+    print_success("Результат конвертации:")
+    print_separator()
+    
+    print_label("Конвертация: ")
+    print_value(format_currency_conversion(amount, from_currency, to_currency, result))
+    
+    if rate:
+        print_label("Курс обмена: ")
+        print_value(f"1 {from_currency} = {rate:.6f} {to_currency}")
+    
+    print_separator()
+
+
+def display_currency_update():
+    """Display currency rates update interface."""
+    print_header("ОБНОВЛЕНИЕ КУРСОВ ВАЛЮТ")
+    
+    print_success("Обновление курсов валют из API...")
+    print_separator()
+    
+    print_label("Избранные валюты для обновления: ")
+    favorite_currencies = get_favorite_currencies()
+    print_value(", ".join(favorite_currencies))
+    print()
+    
+    print_prompt("Нажмите Enter для начала обновления или 'q' для отмены: ")
+    confirm = input().strip().lower()
+    
+    if confirm == 'q':
+        print_error("Обновление отменено.")
+        return
+    
+    print_success("Загружаем актуальные курсы валют...")
+    print()
+    
+    try:
+        success = update_currency_rates()
+        
+        if success:
+            print_success("✅ Курсы валют успешно обновлены!")
+        else:
+            print_error("❌ Ошибка при обновлении курсов валют!")
+            print_error("Проверьте подключение к интернету и попробуйте снова.")
+    
+    except Exception as e:
+        print_error(f"❌ Произошла ошибка: {e}")
+    
+    print_separator()
+
+
+def display_currency_info():
+    """Display currency information with dates."""
+    print_header("ИНФОРМАЦИЯ О КУРСАХ ВАЛЮТ")
+    
+    currency_info_list = get_currency_info()
+    
+    if not currency_info_list:
+        print_error("Нет данных о валютах! Сначала обновите курсы валют.")
+        return
+    
+    print_success("Информация о доступных курсах валют:")
+    print_separator()
+    
+    for info in currency_info_list:
+        print_label("Валюта: ")
+        print_value(info['currency'])
+        
+        print_label("Базовый код: ")
+        print_value(info['base_code'])
+        
+        print_label("Последнее обновление: ")
+        print_value(info['last_update'])
+        
+        print_label("Следующее обновление: ")
+        print_value(info['next_update'])
+        
+        print_label("Провайдер: ")
+        print_value(info['provider'])
+        
+        print_label("Количество курсов: ")
+        print_value(str(info['rates_count']))
+        
+        print_separator()
+    
+    print_success(f"Всего валют в базе: {len(currency_info_list)}")
+    print_separator()
+
+
 def display_dog_image():
     """Display random dog image."""
     print_header("СЛУЧАЙНАЯ СОБАКА")
@@ -361,7 +347,10 @@ def show_menu():
     print(f"{Fore.WHITE}1.{Style.RESET_ALL} Информация о стране")
     print(f"{Fore.WHITE}2.{Style.RESET_ALL} Запрос по ссылке")
     print(f"{Fore.WHITE}3.{Style.RESET_ALL} Собака")
-    print(f"{Fore.WHITE}4.{Style.RESET_ALL} Выход")
+    print(f"{Fore.WHITE}4.{Style.RESET_ALL} {Fore.YELLOW}Конвертация валют{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}5.{Style.RESET_ALL} {Fore.GREEN}Обновление курсов валют{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}6.{Style.RESET_ALL} {Fore.CYAN}Информация о курсах валют{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}7.{Style.RESET_ALL} Выход")
     print_separator()
 
 
@@ -371,7 +360,7 @@ def main():
     
     while True:
         show_menu()
-        print_prompt("Введите номер действия (1-4): ")
+        print_prompt("Введите номер действия (1-7): ")
         
         try:
             choice = input().strip()
@@ -383,12 +372,18 @@ def main():
             elif choice == '3':
                 display_dog_image()
             elif choice == '4':
+                display_currency_conversion()
+            elif choice == '5':
+                display_currency_update()
+            elif choice == '6':
+                display_currency_info()
+            elif choice == '7':
                 print_success("До свидания!")
                 break
             else:
-                print_error("Неверный выбор! Пожалуйста, введите число от 1 до 4.")
+                print_error("Неверный выбор! Пожалуйста, введите число от 1 до 7.")
             
-            if choice in ['1', '2', '3']:
+            if choice in ['1', '2', '3', '4', '5', '6']:
                 print_prompt("\nНажмите Enter для продолжения...")
                 input()
                 
