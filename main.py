@@ -14,6 +14,7 @@ from currency import (
     format_currency_conversion, is_currency_available, get_currency_rate_from_file,
     update_currency_rates, get_currency_info
 )
+from weather import get_weather_by_city, get_weather_by_coordinates, format_weather_data
 
 # Initialize colorama for cross-platform colored output
 init(autoreset=True)
@@ -305,6 +306,61 @@ def display_currency_info():
     print_separator()
 
 
+def display_weather_by_city():
+    """Display weather by city name."""
+    print_header("ПОГОДА В ГОРОДЕ")
+    
+    print_prompt("Введите название города: ")
+    city = input().strip()
+    
+    if not city:
+        print_error("Название города не может быть пустым!")
+        return
+    
+    print_success(f"Получаем погоду для города: {city}")
+    print_separator()
+    
+    weather_data = get_weather_by_city(city)
+    formatted_weather = format_weather_data(weather_data)
+    
+    print_value(formatted_weather)
+    print_separator()
+
+
+def display_weather_by_coordinates():
+    """Display weather by coordinates."""
+    print_header("ПОГОДА ПО КООРДИНАТАМ")
+    
+    print_prompt("Введите широту (latitude): ")
+    try:
+        lat = float(input().strip())
+        if not -90 <= lat <= 90:
+            print_error("Широта должна быть от -90 до 90 градусов!")
+            return
+    except ValueError:
+        print_error("Неверный формат широты!")
+        return
+    
+    print_prompt("Введите долготу (longitude): ")
+    try:
+        lon = float(input().strip())
+        if not -180 <= lon <= 180:
+            print_error("Долгота должна быть от -180 до 180 градусов!")
+            return
+    except ValueError:
+        print_error("Неверный формат долготы!")
+        return
+    
+    print_success(f"Получаем погоду для координат: {lat:.4f}, {lon:.4f}")
+    print_separator()
+    
+    weather_data = get_weather_by_coordinates(lat, lon)
+    formatted_weather = format_weather_data(weather_data)
+    
+    print_value(formatted_weather)
+    print_separator()
+
+
 def display_dog_image():
     """Display random dog image."""
     print_header("СЛУЧАЙНАЯ СОБАКА")
@@ -350,7 +406,9 @@ def show_menu():
     print(f"{Fore.WHITE}4.{Style.RESET_ALL} {Fore.YELLOW}Конвертация валют{Style.RESET_ALL}")
     print(f"{Fore.WHITE}5.{Style.RESET_ALL} {Fore.GREEN}Обновление курсов валют{Style.RESET_ALL}")
     print(f"{Fore.WHITE}6.{Style.RESET_ALL} {Fore.CYAN}Информация о курсах валют{Style.RESET_ALL}")
-    print(f"{Fore.WHITE}7.{Style.RESET_ALL} Выход")
+    print(f"{Fore.WHITE}7.{Style.RESET_ALL} {Fore.BLUE}Погода в городе{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}8.{Style.RESET_ALL} {Fore.BLUE}Погода по координатам{Style.RESET_ALL}")
+    print(f"{Fore.WHITE}9.{Style.RESET_ALL} Выход")
     print_separator()
 
 
@@ -360,7 +418,7 @@ def main():
     
     while True:
         show_menu()
-        print_prompt("Введите номер действия (1-7): ")
+        print_prompt("Введите номер действия (1-9): ")
         
         try:
             choice = input().strip()
@@ -378,12 +436,16 @@ def main():
             elif choice == '6':
                 display_currency_info()
             elif choice == '7':
+                display_weather_by_city()
+            elif choice == '8':
+                display_weather_by_coordinates()
+            elif choice == '9':
                 print_success("До свидания!")
                 break
             else:
-                print_error("Неверный выбор! Пожалуйста, введите число от 1 до 7.")
+                print_error("Неверный выбор! Пожалуйста, введите число от 1 до 9.")
             
-            if choice in ['1', '2', '3', '4', '5', '6']:
+            if choice in ['1', '2', '3', '4', '5', '6', '7', '8']:
                 print_prompt("\nНажмите Enter для продолжения...")
                 input()
                 
