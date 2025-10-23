@@ -1,3 +1,5 @@
 requests
 colorama
 python-dotenv
+pytelegrambotapi
+schedule

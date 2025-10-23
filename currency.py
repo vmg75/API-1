@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 
 FAVORITE_CURRENCY = ['USD', 'EUR', 'GBP', 'CNY', 'RUB']
-CURRENCY_FILE = 'currency.json'
+CURRENCY_FILE = 'cache/currency.json'
 
 def get_currency_rate(currency_code: str) -> float:
     """Get the current exchange rate for a currency."""

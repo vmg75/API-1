@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Cache directory
+cache/
+
 # C extensions
 *.so
 
@@ -374,6 +377,7 @@ files/
 # Cache directories
 .cache/
 __pycache__/
+cache/
 
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints/

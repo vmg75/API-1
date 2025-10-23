@@ -1,0 +1,10 @@
+# Конфигурация Weather Telegram Bot
+# Скопируйте этот файл как .env и заполните ваши API ключи
+
+# API ключ OpenWeather (обязательно)
+# Получите на https://openweathermap.org/api
+OW_API_KEY=ваш_api_ключ_openweather
+
+# Токен Telegram бота (обязательно)  
+# Получите у @BotFather в Telegram
+TELEGRAM_BOT_TOKEN=ваш_токен_бота
