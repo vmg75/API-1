@@ -25,6 +25,7 @@ from weather import (
     get_hourly_weather,
     get_daily_weather,
     get_air_pollution,
+    get_city_by_coordinates,
     format_weather_data, 
     format_hourly_weather, 
     format_daily_weather,
@@ -97,6 +98,23 @@ def create_settings_keyboard():
     return keyboard
 
 
+def create_city_setting_keyboard():
+    """Создает клавиатуру для выбора способа установки города."""
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
+    # Кнопки для выбора способа установки города
+    manual_btn = types.InlineKeyboardButton("✏️ Ввести вручную", callback_data="city_manual")
+    auto_btn = types.InlineKeyboardButton("📍 Получить автоматически", callback_data="city_auto")
+    
+    keyboard.add(manual_btn, auto_btn)
+    
+    # Кнопка назад
+    back_btn = types.InlineKeyboardButton("⬅️ Назад к настройкам", callback_data="settings")
+    keyboard.add(back_btn)
+    
+    return keyboard
+
+
 def create_frequency_settings_keyboard():
     """Создает клавиатуру настроек частоты уведомлений."""
     keyboard = types.InlineKeyboardMarkup(row_width=1)
@@ -160,7 +178,7 @@ def create_notification_keyboard(user_id):
     toggle_text = "🔕 Выключить уведомления" if notifications_enabled else "🔔 Включить уведомления"
     toggle_btn = types.InlineKeyboardButton(toggle_text, callback_data="toggle_notifications")
     
-    times_btn = types.InlineKeyboardButton("⏰ Изменить время", callback_data="change_notification_times")
+    times_btn = types.InlineKeyboardButton("⏰ Изменить интервал уведомлений", callback_data="change_notification_times")
     back_btn = types.InlineKeyboardButton("⬅️ Назад к настройкам", callback_data="settings")
     
     keyboard.add(toggle_btn, times_btn, back_btn)
@@ -430,6 +448,13 @@ def send_weather_info(user_id, city, weather_type, lat=None, lon=None):
         # Отправляем сообщение о загрузке
         loading_msg = bot.send_message(user_id, f"🌤️ Получаем данные о погоде для {city}...")
         
+        # Если координаты не переданы, пытаемся получить их из настроек пользователя
+        if lat is None or lon is None:
+            user_coordinates = user_manager.get_user_coordinates(user_id)
+            if user_coordinates:
+                lat, lon = user_coordinates
+                logger.info(f"Используем сохраненные координаты пользователя {user_id}: {lat}, {lon}")
+        
         if weather_type == "current":
             if lat and lon:
                 weather_data = get_weather_by_coordinates(lat, lon)
@@ -557,16 +582,24 @@ def handle_callback_query(call):
                     selected_city = cities[city_index]
                     
                     if weather_type == "set_city":
-                        # Устанавливаем город по умолчанию
+                        # Устанавливаем город по умолчанию с координатами
                         city_name = selected_city['display_name']
-                        if user_manager.update_user_city(user_id, city_name):
+                        latitude = selected_city['lat']
+                        longitude = selected_city['lon']
+                        
+                        if user_manager.update_user_city(user_id, city_name, latitude, longitude):
+                            success_msg = f"✅ Город по умолчанию установлен!\n\n"
+                            success_msg += f"🏙️ Город: {city_name}\n"
+                            success_msg += f"📍 Координаты: {latitude:.4f}, {longitude:.4f}\n\n"
+                            success_msg += f"💡 Теперь вы можете получать точную погоду для этого города"
+                            
                             bot.edit_message_text(
-                                f"✅ Город по умолчанию установлен: {city_name}",
+                                success_msg,
                                 user_id,
                                 call.message.message_id,
                                 reply_markup=create_settings_keyboard()
                             )
-                            logger.info(f"Пользователь {user_id} установил город: {city_name}")
+                            logger.info(f"Пользователь {user_id} установил город: {city_name} ({latitude}, {longitude})")
                         else:
                             bot.edit_message_text(
                                 "❌ Ошибка при установке города",
@@ -598,43 +631,76 @@ def handle_callback_query(call):
         
         elif call.data == "weather_current":
             city = user_manager.get_user_city(user_id)
+            coordinates = user_manager.get_user_coordinates(user_id)
+            
             if city:
-                handle_city_search(user_id, city, "current")
+                if coordinates:
+                    # Используем сохраненные координаты для точной погоды
+                    lat, lon = coordinates
+                    send_weather_info(user_id, city, "current", lat, lon)
+                else:
+                    # Если нет координат, используем поиск по названию
+                    handle_city_search(user_id, city, "current")
             else:
                 bot.send_message(user_id, "❌ Город по умолчанию не установлен. Используйте /setcity [город]")
         
         elif call.data == "weather_forecast":
             city = user_manager.get_user_city(user_id)
+            coordinates = user_manager.get_user_coordinates(user_id)
+            
             if city:
-                handle_city_search(user_id, city, "forecast")
-            else:
-                bot.send_message(user_id, "❌ Город по умолчанию не установлен. Используйте /setcity [город]")
-        
-        elif call.data == "weather_forecast":
-            city = user_manager.get_user_city(user_id)
-            if city:
-                handle_city_search(user_id, city, "forecast")
+                if coordinates:
+                    # Используем сохраненные координаты для точного прогноза
+                    lat, lon = coordinates
+                    send_weather_info(user_id, city, "forecast", lat, lon)
+                else:
+                    # Если нет координат, используем поиск по названию
+                    handle_city_search(user_id, city, "forecast")
             else:
                 bot.send_message(user_id, "❌ Город по умолчанию не установлен. Используйте /setcity [город]")
         
         elif call.data == "weather_daily":
             city = user_manager.get_user_city(user_id)
+            coordinates = user_manager.get_user_coordinates(user_id)
+            
             if city:
-                handle_city_search(user_id, city, "forecast")
+                if coordinates:
+                    # Используем сохраненные координаты для точного прогноза
+                    lat, lon = coordinates
+                    send_weather_info(user_id, city, "forecast", lat, lon)
+                else:
+                    # Если нет координат, используем поиск по названию
+                    handle_city_search(user_id, city, "forecast")
             else:
                 bot.send_message(user_id, "❌ Город по умолчанию не установлен. Используйте /setcity [город]")
         
         elif call.data == "weather_hourly":
             city = user_manager.get_user_city(user_id)
+            coordinates = user_manager.get_user_coordinates(user_id)
+            
             if city:
-                handle_city_search(user_id, city, "hourly")
+                if coordinates:
+                    # Используем сохраненные координаты для точного прогноза
+                    lat, lon = coordinates
+                    send_weather_info(user_id, city, "hourly", lat, lon)
+                else:
+                    # Если нет координат, используем поиск по названию
+                    handle_city_search(user_id, city, "hourly")
             else:
                 bot.send_message(user_id, "❌ Город по умолчанию не установлен. Используйте /setcity [город]")
         
         elif call.data == "weather_air":
             city = user_manager.get_user_city(user_id)
+            coordinates = user_manager.get_user_coordinates(user_id)
+            
             if city:
-                handle_city_search(user_id, city, "air")
+                if coordinates:
+                    # Используем сохраненные координаты для точного анализа воздуха
+                    lat, lon = coordinates
+                    send_weather_info(user_id, city, "air", lat, lon)
+                else:
+                    # Если нет координат, используем поиск по названию
+                    handle_city_search(user_id, city, "air")
             else:
                 bot.send_message(user_id, "❌ Город по умолчанию не установлен. Используйте /setcity [город]")
         
@@ -647,8 +713,54 @@ def handle_callback_query(call):
             )
         
         elif call.data == "change_city":
-            bot.send_message(user_id, "🏙️ Введите название города для установки по умолчанию:")
+            text = """
+🏙️ Изменить город по умолчанию
+
+Выберите способ установки города:
+
+✏️ Ввести вручную - введите название города
+📍 Получить автоматически - используйте геолокацию
+
+💡 Город по умолчанию используется для уведомлений и быстрого доступа к погоде
+"""
+            bot.edit_message_text(
+                text,
+                user_id,
+                call.message.message_id,
+                reply_markup=create_city_setting_keyboard()
+            )
+        
+        elif call.data == "city_manual":
+            bot.send_message(
+                user_id,
+                "✏️ Введите название города для установки по умолчанию:\n\n"
+                "💡 Примеры: Москва, London, New York, Санкт-Петербург\n"
+                "🌍 Поддерживаются города на разных языках\n\n"
+                "💡 Для отмены введите команду /start"
+            )
             bot.register_next_step_handler(call.message, process_city_input_for_settings)
+        
+        elif call.data == "city_auto":
+            # Создаем клавиатуру с кнопкой геолокации
+            location_keyboard = types.ReplyKeyboardMarkup(
+                resize_keyboard=True, 
+                one_time_keyboard=True
+            )
+            location_btn = types.KeyboardButton("📍 Отправить мою геолокацию", request_location=True)
+            cancel_btn = types.KeyboardButton("❌ Отмена")
+            location_keyboard.add(location_btn, cancel_btn)
+            
+            bot.send_message(
+                user_id,
+                "📍 Получить город автоматически\n\n"
+                "Нажмите кнопку ниже, чтобы отправить вашу геолокацию:\n"
+                "• Бот определит ваш город по координатам\n"
+                "• Установит его как город по умолчанию\n"
+                "• Данные геолокации не сохраняются\n\n"
+                "🔒 Ваша геолокация используется только для определения города",
+                reply_markup=location_keyboard
+            )
+            bot.register_next_step_handler(call.message, process_location_input)
         
         elif call.data == "notification_settings":
             user_data = user_manager.get_user_data(user_id)
@@ -756,12 +868,26 @@ def handle_callback_query(call):
             )
         
         elif call.data == "frequency_fixed_time":
-            bot.send_message(
-                user_id,
-                "🕐 Настройка уведомлений по заданному времени\n\n"
-                "Используйте команду /notifications для настройки конкретного времени\n"
-                "Или введите время в формате HH:MM через запятую (например: 08:00,18:00)"
-            )
+            instruction_msg = """
+🕐 Настройка уведомлений по заданному времени
+
+📝 Введите время в формате HH:MM
+
+📋 Примеры ввода:
+• 08:00 - одно уведомление в 8:00
+• 08:00,18:00 - два уведомления в 8:00 и 18:00
+• 08:00 18:00 - то же самое (через пробел)
+• 09:30,12:15,18:45 - три уведомления
+
+⏰ Правила:
+• Часы: 0-23
+• Минуты: 0-59
+• Можно использовать запятые или пробелы
+• Время автоматически сортируется
+
+💡 Для отмены введите команду /start
+"""
+            bot.send_message(user_id, instruction_msg)
             bot.register_next_step_handler(call.message, process_fixed_time_input)
         
         elif call.data == "frequency_interval":
@@ -824,7 +950,9 @@ def handle_callback_query(call):
 💡 Просто введите название города для получения текущей погоды!
 
 ⚙️ Настройки:
-• Изменить город - установить город по умолчанию
+• Изменить город - установить город по умолчанию:
+  ✏️ Ввести вручную - введите название города
+  📍 Получить автоматически - используйте геолокацию
 • Настройки уведомлений - включить/выключить уведомления
 • Настроить частоту - выбрать тип уведомлений:
   🕐 Заданное время (08:00, 18:00)
@@ -878,6 +1006,112 @@ def handle_callback_query(call):
         bot.answer_callback_query(call.id, "❌ Произошла ошибка")
 
 
+def process_location_input(message):
+    """Обрабатывает геолокацию пользователя для определения города."""
+    user_id = message.from_user.id
+    ensure_user_exists(user_id)
+    
+    try:
+        # Проверяем, что пользователь отправил геолокацию
+        if message.location:
+            latitude = message.location.latitude
+            longitude = message.location.longitude
+            
+            # Убираем клавиатуру геолокации
+            remove_keyboard = types.ReplyKeyboardRemove()
+            bot.send_message(user_id, "📍 Получаем информацию о вашем городе...", reply_markup=remove_keyboard)
+            
+            # Получаем город по координатам
+            city_data = get_city_by_coordinates(latitude, longitude)
+            
+            if "error" in city_data:
+                bot.send_message(
+                    user_id,
+                    f"❌ Не удалось определить город: {city_data['error']}\n\n"
+                    "💡 Попробуйте использовать ручной ввод города",
+                    reply_markup=create_settings_keyboard()
+                )
+                return
+            
+            # Извлекаем название города
+            city_name = city_data.get("name", "Неизвестно")
+            country = city_data.get("country", "")
+            state = city_data.get("state", "")
+            
+            # Формируем полное название
+            full_city_name = city_name
+            if state:
+                full_city_name += f", {state}"
+            if country:
+                full_city_name += f", {country}"
+            
+            # Обновляем город пользователя с координатами
+            if user_manager.update_user_city(user_id, full_city_name, latitude, longitude):
+                success_msg = f"✅ Город по умолчанию установлен!\n\n"
+                success_msg += f"🏙️ Город: {full_city_name}\n"
+                success_msg += f"📍 Координаты: {latitude:.4f}, {longitude:.4f}\n\n"
+                success_msg += f"💡 Теперь вы можете получать точную погоду для этого города"
+                
+                bot.send_message(
+                    user_id,
+                    success_msg,
+                    reply_markup=create_settings_keyboard()
+                )
+                
+                logger.info(f"Пользователь {user_id} установил город по геолокации: {full_city_name} ({latitude}, {longitude})")
+                
+            else:
+                bot.send_message(
+                    user_id,
+                    "❌ Ошибка при сохранении города\n\n"
+                    "Попробуйте еще раз или обратитесь к администратору",
+                    reply_markup=create_settings_keyboard()
+                )
+                
+        elif message.text and message.text.strip() == "❌ Отмена":
+            # Убираем клавиатуру и возвращаемся в настройки
+            remove_keyboard = types.ReplyKeyboardRemove()
+            bot.send_message(
+                user_id,
+                "❌ Отмена установки города",
+                reply_markup=remove_keyboard
+            )
+            bot.send_message(
+                user_id,
+                "⚙️ Настройки",
+                reply_markup=create_settings_keyboard()
+            )
+            
+        else:
+            # Неожиданный ввод
+            remove_keyboard = types.ReplyKeyboardRemove()
+            bot.send_message(
+                user_id,
+                "❌ Пожалуйста, отправьте геолокацию или нажмите 'Отмена'",
+                reply_markup=remove_keyboard
+            )
+            bot.send_message(
+                user_id,
+                "⚙️ Настройки",
+                reply_markup=create_settings_keyboard()
+            )
+            
+    except Exception as e:
+        logger.error(f"Ошибка обработки геолокации: {e}")
+        remove_keyboard = types.ReplyKeyboardRemove()
+        bot.send_message(
+            user_id,
+            "❌ Произошла ошибка при обработке геолокации\n\n"
+            "Попробуйте еще раз или используйте ручной ввод города",
+            reply_markup=remove_keyboard
+        )
+        bot.send_message(
+            user_id,
+            "⚙️ Настройки",
+            reply_markup=create_settings_keyboard()
+        )
+
+
 def process_city_input_for_settings(message):
     """Обрабатывает ввод города пользователем в настройках."""
     user_id = message.from_user.id
@@ -906,55 +1140,126 @@ def process_city_input(message):
 
 
 def process_fixed_time_input(message):
-    """Обрабатывает ввод времени для фиксированных уведомлений."""
+    """Обрабатывает ввод точного времени для фиксированных уведомлений."""
     user_id = message.from_user.id
     ensure_user_exists(user_id)
     
     try:
         time_input = message.text.strip()
         
+        # Если пользователь ввел команду, обрабатываем её
+        if time_input.startswith('/'):
+            return
+        
         # Парсим время (формат: HH:MM,HH:MM или HH:MM HH:MM)
         times = []
-        for time_str in time_input.replace(',', ' ').split():
+        invalid_times = []
+        
+        # Разделяем по запятым и пробелам
+        time_parts = time_input.replace(',', ' ').split()
+        
+        for time_str in time_parts:
             time_str = time_str.strip()
+            
+            # Проверяем формат времени
             if ':' in time_str:
-                hour, minute = time_str.split(':')
-                hour = int(hour)
-                minute = int(minute)
-                
-                if 0 <= hour <= 23 and 0 <= minute <= 59:
-                    times.append(f"{hour:02d}:{minute:02d}")
-                else:
-                    bot.send_message(user_id, f"❌ Неверное время: {time_str}. Часы: 0-23, минуты: 0-59")
-                    return
+                try:
+                    hour_str, minute_str = time_str.split(':')
+                    hour = int(hour_str)
+                    minute = int(minute_str)
+                    
+                    # Проверяем корректность времени
+                    if 0 <= hour <= 23 and 0 <= minute <= 59:
+                        formatted_time = f"{hour:02d}:{minute:02d}"
+                        if formatted_time not in times:  # Избегаем дублирования
+                            times.append(formatted_time)
+                    else:
+                        invalid_times.append(time_str)
+                        
+                except ValueError:
+                    invalid_times.append(time_str)
             else:
-                bot.send_message(user_id, f"❌ Неверный формат времени: {time_str}. Используйте HH:MM")
-                return
+                invalid_times.append(time_str)
+        
+        # Проверяем результаты
+        if invalid_times:
+            error_msg = f"❌ Неверный формат времени: {', '.join(invalid_times)}\n\n"
+            error_msg += "✅ Правильный формат: HH:MM\n"
+            error_msg += "📝 Примеры: 08:00, 18:30, 12:15\n"
+            error_msg += "⏰ Часы: 0-23, минуты: 0-59"
+            bot.send_message(user_id, error_msg)
+            return
         
         if not times:
-            bot.send_message(user_id, "❌ Не введено ни одного времени")
+            help_msg = """
+❌ Не введено ни одного времени
+
+📝 Правильный формат: HH:MM
+📋 Примеры ввода:
+• 08:00
+• 08:00,18:00
+• 08:00 18:00
+• 09:30,12:15,18:45
+
+⏰ Часы: 0-23, минуты: 0-59
+"""
+            bot.send_message(user_id, help_msg)
             return
+        
+        # Сортируем времена для удобства
+        times.sort()
         
         # Обновляем настройки пользователя
         if user_manager.update_notification_settings(user_id, True, times):
             times_text = ", ".join(times)
+            
+            # Формируем информативное сообщение
+            success_msg = f"✅ Уведомления настроены!\n\n"
+            success_msg += f"🕐 Время отправки: {times_text}\n"
+            success_msg += f"📊 Количество уведомлений: {len(times)}\n"
+            success_msg += f"🏙️ Город: {user_manager.get_user_city(user_id) or 'Не установлен'}\n\n"
+            success_msg += f"💡 Для изменения времени используйте команду /notifications"
+            
             bot.send_message(
                 user_id,
-                f"✅ Уведомления настроены на время: {times_text}",
+                success_msg,
                 reply_markup=create_settings_keyboard()
             )
+            
             logger.info(f"Пользователь {user_id} установил время уведомлений: {times_text}")
             
             # Перепланируем уведомления
             notification_scheduler.schedule_notifications()
+            
         else:
-            bot.send_message(user_id, "❌ Ошибка при сохранении настроек")
+            bot.send_message(
+                user_id, 
+                "❌ Ошибка при сохранении настроек\n\n"
+                "Попробуйте еще раз или обратитесь к администратору"
+            )
             
     except ValueError:
-        bot.send_message(user_id, "❌ Неверный формат времени. Используйте HH:MM")
+        error_msg = """
+❌ Неверный формат времени
+
+📝 Правильный формат: HH:MM
+📋 Примеры ввода:
+• 08:00
+• 08:00,18:00  
+• 08:00 18:00
+• 09:30,12:15,18:45
+
+⏰ Часы: 0-23, минуты: 0-59
+"""
+        bot.send_message(user_id, error_msg)
+        
     except Exception as e:
         logger.error(f"Ошибка обработки времени: {e}")
-        bot.send_message(user_id, "❌ Произошла ошибка при обработке времени")
+        bot.send_message(
+            user_id, 
+            "❌ Произошла ошибка при обработке времени\n\n"
+            "Попробуйте еще раз или обратитесь к администратору"
+        )
 
 
 def process_notification_times_input(message):
@@ -989,17 +1294,6 @@ def process_notification_times_input(message):
     except Exception as e:
         logger.error(f"Ошибка обработки времени уведомлений: {e}")
         bot.send_message(user_id, "❌ Произошла ошибка при обработке времени")
-
-
-@bot.message_handler(func=lambda message: True)
-def handle_other_messages(message):
-    """Обработчик всех остальных сообщений."""
-    user_id = message.from_user.id
-    ensure_user_exists(user_id)
-    
-    send_weather_info(user_id, message.text.strip(), "current")
-    return
-
 
 def signal_handler(signum, frame):
     """Обработчик сигналов для graceful shutdown."""

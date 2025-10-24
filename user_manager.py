@@ -109,13 +109,15 @@ class UserManager:
         
         return self.save_users(users)
     
-    def update_user_city(self, user_id: int, city: str) -> bool:
+    def update_user_city(self, user_id: int, city: str, latitude: float = None, longitude: float = None) -> bool:
         """
-        Обновляет город по умолчанию для пользователя.
+        Обновляет город по умолчанию для пользователя с координатами.
         
         Args:
             user_id (int): ID пользователя в Telegram
             city (str): Новый город по умолчанию
+            latitude (float, optional): Широта города
+            longitude (float, optional): Долгота города
             
         Returns:
             bool: True если обновление прошло успешно
@@ -127,6 +129,11 @@ class UserManager:
         
         users[str(user_id)]["default_city"] = city
         users[str(user_id)]["last_activity"] = datetime.now().isoformat()
+        
+        # Сохраняем координаты если они предоставлены
+        if latitude is not None and longitude is not None:
+            users[str(user_id)]["city_latitude"] = latitude
+            users[str(user_id)]["city_longitude"] = longitude
         
         return self.save_users(users)
     
@@ -185,6 +192,33 @@ class UserManager:
         """
         user_data = self.get_user_data(user_id)
         return user_data.get("default_city") if user_data else None
+    
+    def get_user_coordinates(self, user_id: int) -> Optional[tuple]:
+        """
+        Получает координаты города пользователя.
+        
+        Args:
+            user_id (int): ID пользователя в Telegram
+            
+        Returns:
+            Optional[tuple]: Кортеж (latitude, longitude) или None
+        """
+        user_data = self.get_user_data(user_id)
+        if user_data and "city_latitude" in user_data and "city_longitude" in user_data:
+            return (user_data["city_latitude"], user_data["city_longitude"])
+        return None
+    
+    def has_user_coordinates(self, user_id: int) -> bool:
+        """
+        Проверяет, есть ли у пользователя сохраненные координаты города.
+        
+        Args:
+            user_id (int): ID пользователя в Telegram
+            
+        Returns:
+            bool: True если координаты есть
+        """
+        return self.get_user_coordinates(user_id) is not None
     
     def is_notifications_enabled(self, user_id: int) -> bool:
         """

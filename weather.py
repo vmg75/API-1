@@ -566,11 +566,11 @@ def format_weather_data(data: Dict) -> str:
         
         weather_desc = data.get("weather", [{}])[0].get("description", "Неизвестно")
         
-        return f"""<code>📍 Место:       {location}
-🌡️ Температура: {temp:.1f}°C
-💧 Влажность:   {humidity}%
-🌬️ Ветер:       {wind_speed} м/с, {wind_dir}
-☁️ Погода:      {weather_desc.title()}</code>"""
+        return f"""<code>📍 Место:       {location}</code>
+<code>🌡️ Температура: {temp:.1f}°C</code>
+<code>💧 Влажность:   {humidity}%</code>
+<code>🌬️ Ветер:       {wind_speed} м/с, {wind_dir}</code>
+<code>☁️ Погода:      {weather_desc.title()}</code>"""
     except Exception as e:
         return f"❌ Ошибка форматирования данных: {e}"
 
@@ -624,7 +624,7 @@ def format_daily_weather(data: Dict) -> str:
         
         result = f"📍 Место: {city}\n"
         result += f"📅 Прогноз {COUNT_DAILY_FORECAST} дней (ежедневные интервалы):\n\n"
-        result += f"<code>{"Дата":<11} | {"Темп.":<7} | {"Вл.":<4} | {"Ветер":<9} | {"Погода":<15}</code>\n"
+        result += f"<code>{"Дата":<10} | {"Темп.":<7} | {"Вл.":<4} | {"Ветер":<9} | {"Погода":<15}</code>\n"
         result += "<code>" + "-"*56 + "</code>\n"
         forecasts = data.get("list", [])
         for i, forecast in enumerate(forecasts[:COUNT_DAILY_FORECAST]):

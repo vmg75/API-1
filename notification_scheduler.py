@@ -171,7 +171,7 @@ class NotificationScheduler:
                 message = f"❌ Не удалось получить погоду для города {city}: {weather_data['error']}"
             else:
                 formatted_weather = format_weather_data(weather_data)
-                message = f"🌅 Утренний прогноз погоды\n\n{formatted_weather}"
+                message = f"🌅 Погода сейчас\n{formatted_weather}"
             
             # Отправляем сообщение
             self.bot_instance.send_message(user_id, message)
